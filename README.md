@@ -1,58 +1,272 @@
-<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
+## Web Push Sederhana di Laravel + Vite
 
-<p align="center">
-<a href="https://github.com/laravel/framework/actions"><img src="https://github.com/laravel/framework/workflows/tests/badge.svg" alt="Build Status"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
-</p>
+### 1. Ringkasan Fitur
 
-## About Laravel
+Project ini menambahkan fitur **Web Push Notification** ke Laravel 13 menggunakan:
 
-Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
+- **Service Worker**: `public/sw.js`
+- **Frontend**: `resources/js/app.js`, UI di `resources/views/welcome.blade.php`
+- **Backend**: `app/Http/Controllers/WebPushController.php`
+- **DB**: tabel `push_subscriptions` (model `App\Models\PushSubscription`)
+- **Library push**: `minishlink/web-push` (VAPID / Push API standar)
 
-- [Simple, fast routing engine](https://laravel.com/docs/routing).
-- [Powerful dependency injection container](https://laravel.com/docs/container).
-- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
-- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
-- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
-- [Robust background job processing](https://laravel.com/docs/queues).
-- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
+Alur singkat:
 
-Laravel is accessible, powerful, and provides tools required for large, robust applications.
+1. User buka `/`, klik **Aktifkan** → browser register service worker, minta izin notifikasi, subscribe Push → kirim subscription ke Laravel.
+2. Klik **Kirim** → Laravel kirim push ke semua subscription via VAPID → service worker terima event `push` dan menampilkan notifikasi.
+3. Tombol **Tes lokal** memunculkan notifikasi langsung dari service worker (tanpa lewat Push Service), untuk debugging izin OS/Chrome.
 
-## Learning Laravel
+---
 
-Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework.
+### 2. Prasyarat
 
-In addition, [Laracasts](https://laracasts.com) contains thousands of video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
+- PHP 8.3+
+- Composer
+- Node.js + npm
+- Browser yang mendukung Web Push:
+  - **Didukung**: Chrome, Edge, Firefox (desktop)
+  - **Tidak ditargetkan di demo ini**: Safari (pakai APNs, protokol berbeda)
 
-You can also watch bite-sized lessons with real-world projects on [Laravel Learn](https://laravel.com/learn), where you will be guided through building a Laravel application from scratch while learning PHP fundamentals.
+---
 
-## Agentic Development
+### 3. Setup Project
 
-Laravel's predictable structure and conventions make it ideal for AI coding agents like Claude Code, Cursor, and GitHub Copilot. Install [Laravel Boost](https://laravel.com/docs/ai) to supercharge your AI workflow:
+1. Clone & install dependency:
 
-```bash
-composer require laravel/boost --dev
+   ```bash
+   composer install
+   npm install
+   ```
 
-php artisan boost:install
-```
+2. Buat file `.env` & kunci aplikasi:
 
-Boost provides your agent 15+ tools and skills that help agents build Laravel applications while following best practices.
+   ```bash
+   cp .env.example .env
+   php artisan key:generate
+   ```
 
-## Contributing
+3. Migrate database (default: SQLite):
 
-Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
+   ```bash
+   touch database/database.sqlite
+   php artisan migrate
+   ```
 
-## Code of Conduct
+---
 
-In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
+### 4. Konfigurasi VAPID (Wajib untuk Web Push)
 
-## Security Vulnerabilities
+1. Generate VAPID keys:
 
-If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
+   ```bash
+   php -r 'require "vendor/autoload.php"; $k=Minishlink\\WebPush\\VAPID::createVapidKeys(); echo "VAPID_PUBLIC_KEY=".$k["publicKey"].PHP_EOL."VAPID_PRIVATE_KEY=".$k["privateKey"].PHP_EOL;'
+   ```
 
-## License
+2. Isi ke `.env`:
 
-The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+   ```env
+   VAPID_PUBLIC_KEY=ISI_DARI_PERINTAH_DI_ATAS
+   VAPID_PRIVATE_KEY=ISI_DARI_PERINTAH_DI_ATAS
+   VAPID_SUBJECT=mailto:you@example.com
+   ```
+
+   Jangan gunakan placeholder seperti `publickey` / `privatekey`. Jika salah, di browser akan muncul error:
+
+   > Failed to execute 'atob' on 'Window': The string to be decoded is not correctly encoded
+
+3. Reload config:
+
+   ```bash
+   php artisan config:clear
+   ```
+
+Config VAPID dibaca dari `config/webpush.php`, lalu dipakai di `WebPushController`.
+
+---
+
+### 5. Menjalankan Aplikasi (Localhost)
+
+1. Jalankan Laravel:
+
+   ```bash
+   php artisan serve --host=127.0.0.1 --port=8000
+   ```
+
+2. Jalankan Vite dev server:
+
+   ```bash
+   npm run dev
+   ```
+
+3. Buka browser di:
+
+   - `http://127.0.0.1:8000/` (atau `http://localhost:8000`, pilih satu dan konsisten).
+
+4. Pastikan izin notifikasi:
+
+   - **Chrome**:
+     - `chrome://settings/content/notifications` → origin localhost/127.0.0.1 harus di **Allow**.
+   - **macOS**:
+     - `System Settings → Notifications → Google Chrome` → **Allow notifications**, alert style bukan “None”.
+     - Nonaktifkan sementara **Do Not Disturb / Focus**.
+
+---
+
+### 6. Cara Menggunakan Fitur Web Push
+
+Di halaman `/` terdapat card **Web Push** dengan 3 tombol:
+
+1. **Aktifkan**
+
+   - Mendaftarkan service worker `sw.js`.
+   - Meminta izin `Notification`.
+   - Menjalankan:
+
+     ```js
+     reg.pushManager.subscribe({
+       userVisibleOnly: true,
+       applicationServerKey: base64UrlToUint8Array(VAPID_PUBLIC_KEY),
+     });
+     ```
+
+   - Mengirim subscription ke backend:
+     - Endpoint: `POST /webpush/subscribe`
+     - Disimpan ke tabel `push_subscriptions` (kolom `endpoint`, `p256dh`, `auth`).
+
+2. **Tes lokal**
+
+   - Tidak menggunakan FCM / Push Service.
+   - Memanggil langsung:
+
+     ```js
+     const reg = await navigator.serviceWorker.ready;
+     await reg.showNotification('Tes lokal (tanpa push)', { ... });
+     ```
+
+   - Kalau tombol ini **tidak memunculkan notifikasi**, masalah ada pada:
+     - Izin notifikasi di OS / browser, atau
+     - Profil browser (bukan di server Web Push).
+
+3. **Kirim**
+
+   - Memanggil endpoint `POST /webpush/send` dengan payload:
+
+     ```json
+     {
+       "title": "Web Push",
+       "body": "Notifikasi dari Laravel ...",
+       "url": "CURRENT_PAGE_URL"
+     }
+     ```
+
+   - Backend (`WebPushController@send`) akan:
+     - Membaca semua subscription dari DB.
+     - **Skip** endpoint Safari (`https://web.push.apple.com/...`) karena memakai APNs.
+     - Mengirim payload ke setiap subscription via `minishlink/web-push`.
+     - Menghapus subscription yang expired (HTTP 404/410).
+     - Mengembalikan JSON:
+
+       ```json
+       {
+         "ok": true,
+         "sent": 1,
+         "failed": 0,
+         "skipped": 0,
+         "skippedEndpoints": [],
+         "errors": []
+       }
+       ```
+
+4. **Status**
+
+   - `wp-status` (`<pre id="wp-status">`) menampilkan:
+     - Proses subscribe / send.
+     - Respon JSON dari `/webpush/subscribe` dan `/webpush/send`.
+
+---
+
+### 7. Detail Kode Penting
+
+**Service worker**: `public/sw.js`
+
+- `install` + `activate`: `skipWaiting()` dan `clients.claim()` agar SW cepat aktif.
+- `push`:
+  - Parse payload JSON, fallback ke text.
+  - `console.log('[sw] push', {...})` untuk debug via DevTools → Application → Service Workers → console.
+  - `showNotification(title, { body, tag, renotify, requireInteraction, data: { url } })`.
+- `notificationclick`:
+  - Menutup notifikasi.
+  - Fokus/navigate tab yang sudah ada atau `clients.openWindow(url)`.
+
+**Frontend**: `resources/js/app.js`
+
+- `ensureServiceWorker()`: register `sw.js` dan mengembalikan `ServiceWorkerRegistration`.
+- `ensurePermission()`: `Notification.requestPermission()`.
+- `subscribeWebPush()`: memanggil `pushManager.subscribe`, kirim hasilnya ke `/webpush/subscribe`.
+- `sendTestNotification()`: mengirim POST ke `/webpush/send`.
+- `showLocalTestNotification()`: men-trigger `reg.showNotification()` langsung (tanpa push).
+- `wireButtons()`: menghubungkan tombol **Aktifkan**, **Tes lokal**, dan **Kirim**.
+
+**Backend**:
+
+- Model: `app/Models/PushSubscription.php`
+- Migration: `database/migrations/0001_01_01_000003_create_push_subscriptions_table.php`
+- Controller: `app/Http/Controllers/WebPushController.php`
+  - `subscribe(Request $request)`:
+    - Validasi payload subscription (`endpoint`, `keys.p256dh`, `keys.auth`).
+    - `updateOrCreate` berdasarkan `endpoint`.
+  - `send(Request $request)`:
+    - Validasi optional `title`, `body`, `url`.
+    - Setup `WebPush` dengan VAPID keys dari `config/webpush.php`.
+    - Skip endpoint Safari.
+    - `flush()` dan hitung `sent`, `failed`, `skipped`.
+    - Hapus subscription yang expired (404/410).
+- Routes: `routes/web.php`:
+
+  ```php
+  Route::post('/webpush/subscribe', [WebPushController::class, 'subscribe']);
+  Route::post('/webpush/send', [WebPushController::class, 'send']);
+  ```
+
+---
+
+### 8. Jalan di Domain Publik (ngrok / HTTPS lain)
+
+Web Push butuh **HTTPS**. Untuk testing:
+
+1. Jalankan tunnel (contoh ngrok):
+
+   ```bash
+   ngrok http 8000
+   ```
+
+2. Set `APP_URL` di `.env` ke URL ngrok, misalnya:
+
+   ```env
+   APP_URL=https://xxxx-xx-xx-xx.ngrok-free.app
+   ```
+
+3. Pastikan VAPID keys sudah benar di `.env`, lalu:
+
+   ```bash
+   php artisan config:clear
+   ```
+
+4. Buka URL ngrok di browser, klik **Aktifkan** lagi (origin baru → subscription baru).
+
+Kalau muncul error `atob` di browser, cek lagi:
+
+- `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` **bukan** placeholder.
+- Tidak ada spasi/karakter aneh di awal/akhir value.
+
+---
+
+### 9. Batasan & Catatan
+
+- Safari tidak didukung di demo ini (butuh integrasi APNs).
+- Disarankan testing utama di Chrome / Edge / Firefox desktop.
+- Jika:
+  - `/webpush/send` mengembalikan `ok: true`, **dan**
+  - Di console service worker terlihat log `[sw] push {...}`,
+  - namun tidak ada banner,
+  - maka masalah ada di pengaturan notifikasi OS / browser, bukan di kode.
